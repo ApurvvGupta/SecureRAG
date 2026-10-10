@@ -18,6 +18,14 @@ Ask questions about:
 - **Security advisories** and best practices
 """)
 
+# Sidebar configuration for RAG settings
+with st.sidebar:
+    st.header("⚙️ Configuration")
+    use_reranking = st.checkbox("Enable Reranking", value=True)
+    top_k_slider = st.slider("Documents to Retrieve", 1, 10, 5)
+    st.markdown("---")
+    st.info("Ensure the LangGraph backend is properly initialized and data is ingested before querying.")
+
 query = st.text_input("Ask a cybersecurity question:")
 
 if query:
