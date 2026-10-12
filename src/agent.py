@@ -10,9 +10,20 @@ from .retriever import HybridRetriever
 logger = logging.getLogger(__name__)
 
 
+from typing import Annotated, TypedDict, List
+from langgraph.graph import StateGraph, END
+from langchain_anthropic import ChatAnthropic
+from .config import RAGConfig
+from .retriever import HybridRetriever
+from .prompts import SYSTEM_PROMPT, format_rag_prompt
+
+logger = logging.getLogger(__name__)
+
+
 class AgentState(TypedDict):
-    """State for the RAG agent graph."""
+    """State for the RAG agent graph with conversation memory."""
     query: str
+    chat_history: List[dict]
     retrieved_docs: list[dict]
     answer: str
     sources: list[str]
@@ -28,35 +39,25 @@ def build_agent(retriever: HybridRetriever, config: RAGConfig) -> StateGraph:
         max_tokens=config.max_tokens,
     )
 
-    def retrieve_node(state: AgentState) -> AgentState:
+    def retrieve_node(state: AgentState) -> dict:
         """Retrieve relevant documents."""
         docs = retriever.retrieve(state["query"])
         return {"retrieved_docs": docs}
 
-    def generate_node(state: AgentState) -> AgentState:
-        """Generate answer from retrieved context."""
-        context = "\n\n".join(
-            doc["content"] for doc in state["retrieved_docs"]
-        )
+    def generate_node(state: AgentState) -> dict:
+        """Generate answer from retrieved context with citation enforcement."""
+        formatted_prompt = format_rag_prompt(state["retrieved_docs"], state["query"])
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": formatted_prompt},
+        ]
 
-        prompt = f"""You are a cybersecurity expert. Answer the question based
-only on the provided context. If the context doesn't contain enough
-information, say so clearly.
+        response = llm.invoke(messages)
 
-Context:
-{context}
-
-Question: {state['query']}
-
-Provide a detailed, accurate answer with references to specific CVEs or
-MITRE ATT&CK techniques when applicable."""
-
-        response = llm.invoke(prompt)
-
-        sources = [
+        sources = list(set([
             doc["metadata"].get("source", "unknown")
             for doc in state["retrieved_docs"]
-        ]
+        ]))
 
         return {
             "answer": response.content,
